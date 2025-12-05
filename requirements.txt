@@ -1,3 +1,3 @@
 pyzotero
 arxiv
-google-generativeai>=0.7.0
+openai>=1.0.0
