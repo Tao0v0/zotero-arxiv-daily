@@ -6,42 +6,35 @@ from email.mime.text import MIMEText
 from datetime import datetime, timedelta, timezone
 from pyzotero import zotero
 import arxiv
-import google.generativeai as genai
+from openai import OpenAI  # <--- 改用 OpenAI 库
 
 # --- 1. 基础配置 ---
-# 从 GitHub Secrets 读取配置
 Z_ID = os.environ.get("ZOTERO_USER_ID")
 Z_KEY = os.environ.get("ZOTERO_API_KEY")
 EMAIL_USER = os.environ.get("EMAIL_USER")
 EMAIL_PASS = os.environ.get("EMAIL_PASS")
 RECEIVER = os.environ.get("EMAIL_RECEIVER")
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
-
 BASE_URL = os.environ.get("GEMINI_BASE_URL")
-# --- 2. 你的科研兴趣画像 (已为你定制) ---
+
+# --- 2. 你的科研兴趣画像 ---
 def get_research_profile():
-    """
-    这里定义了 AI 评分的标准。
-    基于你的背景，我已经把 FPGA、INT8、ViT 等关键词预埋进去了。
-    """
     return """
     I am a researcher focusing on Hardware-Aware AI and Model Deployment.
     
     My core research interests are:
-    1. **FPGA Acceleration**: Deploying deep learning models on FPGAs (Xilinx/AMD), focusing on accelerator design.
-    2. **Model Compression**: Specifically **INT8 quantization**, mixed-precision training, and model pruning.
-    3. **Vision Transformers (ViT)**: Hardware optimization for ViTs, position embeddings, and efficient attention mechanisms.
-    4. **Efficient Attention**: Hardware-friendly implementations of attention (e.g., FlashAttention).
-    5. **Embedded Systems**: Zynq/PYNQ platforms and edge computing.
+    1. **FPGA Acceleration**: Deploying deep learning models on FPGAs (Xilinx/AMD).
+    2. **Model Compression**: Specifically **INT8 quantization**, mixed-precision, and pruning.
+    3. **Vision Transformers (ViT)**: Hardware optimization for ViTs.
+    4. **Efficient Attention**: Hardware-friendly attention (e.g., FlashAttention).
+    5. **Embedded Systems**: Zynq/PYNQ platforms.
 
-    Please evaluate the paper based on how closely it relates to these hardware/efficiency topics.
+    Please evaluate the paper based on these topics.
     """
 
 def get_keywords_from_zotero():
-    """从 Zotero 提取标签，并补充核心关键词"""
+    """同原代码，省略重复部分，保持不变"""
     keywords = set()
-    
-    # 1. 尝试从 Zotero 读取 (如果失败则跳过)
     try:
         if Z_ID and Z_KEY:
             zot = zotero.Zotero(Z_ID, 'user', Z_KEY)
@@ -49,37 +42,31 @@ def get_keywords_from_zotero():
             for item in items:
                 if 'tags' in item['data']:
                     for t in item['data']['tags']:
-                        # 只要英文标签，避免搜索报错
                         if t['tag'].isascii():
                             keywords.add(t['tag'])
     except Exception as e:
         print(f"Zotero 读取跳过: {e}")
 
-    # 2. 强制补充你的核心领域词 (保证即使 Zotero 没标签也能搜到)
-    # 这里的词用于去 Arxiv 广撒网
     core_keywords = ["FPGA", "Quantization", "Vision Transformer", "Hardware Accelerator"]
     final_keywords = list(keywords) + core_keywords
-    
-    # 限制关键词数量，防止 URL 太长报错
     return final_keywords[:6]
 
 def search_arxiv(keywords):
-    """在 arXiv 搜索过去 24 小时的论文"""
+    """同原代码，保持不变"""
+    # ... (保持你原来 search_arxiv 的代码完全不变) ...
+    # 为节省篇幅这里不重复写，请保留你原来的 search_arxiv 函数
     print(f"搜索关键词: {keywords}")
-    
-    # 构建查询语句: (abs:"FPGA" OR abs:"ViT" ...) AND cat:cs.*
     query_part = " OR ".join([f'abs:"{k}"' for k in keywords])
     search_query = f"({query_part}) AND cat:cs.*"
     
     client = arxiv.Client()
     search = arxiv.Search(
         query = search_query,
-        max_results = 40, # 抓取前 40 篇给 AI 挑
+        max_results = 40,
         sort_by = arxiv.SortCriterion.SubmittedDate
     )
     
     candidates = []
-    # 设定时间范围：过去 36 小时 (涵盖时区差)
     yesterday = datetime.now(timezone.utc) - timedelta(hours=36)
     
     for r in client.results(search):
@@ -94,15 +81,19 @@ def search_arxiv(keywords):
     print(f"arXiv 初筛找到 {len(candidates)} 篇近期论文...")
     return candidates
 
+# --- 3. 核心修改：AI 评分函数 ---
 def ai_review_paper(paper, interest_profile):
-    """调用 Gemini 给论文打分"""
-    # 配置 Gemini
-    genai.configure(api_key=GEMINI_KEY, host=BASE_URL)
+    """使用 OpenAI 兼容协议调用中转站的 Gemini"""
     
-    # 使用 Gemini 3 (速度快、免费额度高)
-    model = genai.GenerativeModel(
-        'gemini-3',
-        generation_config={"response_mime_type": "application/json"}
+    # 修正 Base URL 格式：通常中转站需要在末尾加 /v1
+    # 如果你的 Secrets 里已经是 https://api.chataiapi.com/v1 则不需要拼接
+    api_base = BASE_URL
+    if api_base and not api_base.endswith('/v1'):
+        api_base = f"{api_base}/v1"
+
+    client = OpenAI(
+        api_key=GEMINI_KEY,
+        base_url=api_base
     )
 
     prompt = f"""
@@ -118,28 +109,36 @@ def ai_review_paper(paper, interest_profile):
     1. Score relevance from 0 to 10 (10 = Must read for my hardware/FPGA research).
     2. Provide a brief reason (1 sentence).
     
-    Output strictly in JSON format:
-    {{
-        "score": 8,
-        "reason": "This paper proposes a new INT8 quantization method specifically for ViTs on FPGA."
-    }}
+    Output strictly in JSON format like: {{"score": 8, "reason": "..."}}
     """
 
     try:
-        response = model.generate_content(prompt)
-        return json.loads(response.text)
+        # 中转站通常把 gemini 映射为 gemini-pro 或 gemini-1.5-flash
+        # 注意：这里不能用 gemini-3，大部分中转站不支持瞎写的名字
+        response = client.chat.completions.create(
+            model="gemini-1.5-flash", 
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant that outputs JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            response_format={"type": "json_object"} # 强制 JSON 模式，防止格式错误
+        )
+        
+        content = response.choices[0].message.content
+        return json.loads(content)
+        
     except Exception as e:
-        print(f"Gemini 分析出错: {e}")
-        time.sleep(1) # 避让
+        print(f"AI 分析出错: {e}")
+        time.sleep(1)
         return {"score": 0, "reason": "Error"}
 
 def main():
-    # 检查 Key 是否存在
+    # ... (保持你原来 main 的代码完全不变) ...
+    # 只需要保留原来的 main 函数即可
     if not GEMINI_KEY:
-        print("错误：GitHub Secrets 中未找到 GEMINI_API_KEY，无法运行 AI 评分。")
+        print("错误：GitHub Secrets 中未找到 GEMINI_API_KEY")
         return
 
-    # 1. 获取数据
     profile = get_research_profile()
     keywords = get_keywords_from_zotero()
     candidates = search_arxiv(keywords)
@@ -148,34 +147,28 @@ def main():
         print("今日无符合关键词的新论文。")
         return
 
-    # 2. AI 评分
     print(f"开始 AI 智能评审 (共 {len(candidates)} 篇)...")
     high_quality_papers = []
     
     for paper in candidates:
-        # 调用 Gemini
         review = ai_review_paper(paper, profile)
         score = review.get('score', 0)
         
         print(f"[{score}分] {paper['title'][:40]}...")
         
-        # 筛选阈值：7分以上才推送
         if score >= 7:
             paper['score'] = score
             paper['reason'] = review.get('reason', 'N/A')
             high_quality_papers.append(paper)
         
-        # 稍微延时，防止触发 API 速率限制
         time.sleep(2)
 
-    # 3. 发送邮件
     high_quality_papers.sort(key=lambda x: x['score'], reverse=True)
     
     if high_quality_papers:
         count = len(high_quality_papers)
         print(f"最终筛选出 {count} 篇高分论文，正在发送...")
         
-        # 构建邮件正文
         content = f"Gemini 为您精选了 {count} 篇 FPGA/AI 硬件相关论文 ({datetime.now().strftime('%Y-%m-%d')})：\n\n"
         for p in high_quality_papers:
             content += f"【{p['score']}分】 {p['title']}\n"
@@ -189,7 +182,6 @@ def main():
         msg['To'] = RECEIVER
 
         try:
-            # 兼容 Gmail 和大部分邮箱的 SSL 端口
             server = smtplib.SMTP_SSL('smtp.gmail.com', 465) 
             server.login(EMAIL_USER, EMAIL_PASS)
             server.send_message(msg)
