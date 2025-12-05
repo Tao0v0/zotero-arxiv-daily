@@ -2,8 +2,9 @@ name: Daily Arxiv Push
 
 on:
   schedule:
+    # 每天 UTC 0点 (北京时间早上8点) 运行
     - cron: '0 0 * * *'
-  workflow_dispatch:
+  workflow_dispatch: # 允许手动运行
 
 jobs:
   run-script:
@@ -15,16 +16,20 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.9'
+          # 升级到 3.11，解决 google 库报错的问题
+          python-version: '3.11'
 
       - name: Install dependencies
         run: pip install -r requirements.txt
 
       - name: Run script
         env:
+          # 这里是关键！必须把 Secrets 里的 Key 映射给环境变量
           ZOTERO_USER_ID: ${{ secrets.ZOTERO_USER_ID }}
           ZOTERO_API_KEY: ${{ secrets.ZOTERO_API_KEY }}
           EMAIL_USER: ${{ secrets.EMAIL_USER }}
           EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
           EMAIL_RECEIVER: ${{ secrets.EMAIL_RECEIVER }}
+          # 之前漏了下面这一行，所以脚本找不到 Key
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python main.py
