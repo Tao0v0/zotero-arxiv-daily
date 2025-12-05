@@ -83,10 +83,11 @@ def search_arxiv(keywords):
 
 # --- 3. 核心修改：AI 评分函数 ---
 def ai_review_paper(paper, interest_profile):
-    """使用 OpenAI 兼容协议调用中转站的 Gemini"""
+    """使用 OpenAI 兼容协议调用中转站"""
     
-    # 修正 Base URL 格式：通常中转站需要在末尾加 /v1
-    # 如果你的 Secrets 里已经是 https://api.chataiapi.com/v1 则不需要拼接
+    # 适配商家截图里的地址
+    # 如果你的 Secrets 里配的是 https://api.chataiapi.com/v1 也可以
+    # 关键是下面的 model 名字
     api_base = BASE_URL
     if api_base and not api_base.endswith('/v1'):
         api_base = f"{api_base}/v1"
@@ -113,15 +114,16 @@ def ai_review_paper(paper, interest_profile):
     """
 
     try:
-        # 中转站通常把 gemini 映射为 gemini-pro 或 gemini-1.5-flash
-        # 注意：这里不能用 gemini-3，大部分中转站不支持瞎写的名字
+        # --- 核心修改在这里 ---
+        # 商家截图里用的是 "gemini-2.5-pro"，必须完全一致
         response = client.chat.completions.create(
-            model="gemini-1.5-flash", 
+            model="gemini-2.5-pro", 
             messages=[
                 {"role": "system", "content": "You are a helpful assistant that outputs JSON."},
                 {"role": "user", "content": prompt}
             ],
-            response_format={"type": "json_object"} # 强制 JSON 模式，防止格式错误
+            # 如果商家这模型不支持 json_object 模式报错，就把下面这行 response_format 删掉
+            response_format={"type": "json_object"} 
         )
         
         content = response.choices[0].message.content
@@ -129,9 +131,8 @@ def ai_review_paper(paper, interest_profile):
         
     except Exception as e:
         print(f"AI 分析出错: {e}")
-        time.sleep(1)
         return {"score": 0, "reason": "Error"}
-
+        
 def main():
     # ... (保持你原来 main 的代码完全不变) ...
     # 只需要保留原来的 main 函数即可
