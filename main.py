@@ -98,9 +98,9 @@ def ai_review_paper(paper, interest_profile):
     # 配置 Gemini
     genai.configure(api_key=GEMINI_KEY)
     
-    # 使用 1.5 Flash (速度快、免费额度高)
+    # 使用 Gemini 3 (速度快、免费额度高)
     model = genai.GenerativeModel(
-        'gemini-1.5-flash',
+        'gemini-3',
         generation_config={"response_mime_type": "application/json"}
     )
 
