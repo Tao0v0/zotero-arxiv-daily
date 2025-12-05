@@ -17,6 +17,7 @@ EMAIL_PASS = os.environ.get("EMAIL_PASS")
 RECEIVER = os.environ.get("EMAIL_RECEIVER")
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
 
+BASE_URL = os.environ.get("GEMINI_BASE_URL")
 # --- 2. 你的科研兴趣画像 (已为你定制) ---
 def get_research_profile():
     """
@@ -96,7 +97,7 @@ def search_arxiv(keywords):
 def ai_review_paper(paper, interest_profile):
     """调用 Gemini 给论文打分"""
     # 配置 Gemini
-    genai.configure(api_key=GEMINI_KEY)
+    genai.configure(api_key=GEMINI_KEY, host=BASE_URL)
     
     # 使用 Gemini 3 (速度快、免费额度高)
     model = genai.GenerativeModel(
